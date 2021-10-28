@@ -1,0 +1,86 @@
+const express = require('express');
+const morgan =  require('morgan');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+const multer = require('multer');
+
+const dotenv = require('dotenv');
+const path = require('path');
+const fs = require('fs');
+const exp = require('constants');
+const { userInfo } = require('os');
+
+dotenv.config();
+
+const app = express();
+app.set('port', process.env.PORT || 3000);
+
+app.use(
+    morgan('dev'),
+    express.static(path.join(__dirname, 'public')),
+    express.json(),
+    express.urlencoded({extended: false }),
+    cookieParser(process.env.SECRET)
+);
+
+app.use(session({
+    resave: false,
+    saveUninitialized: false,
+    secret: process.env.SECRET,
+    cookie: {
+        httpOnly: true,
+        secure: false
+    },
+    name: 'session-cookie'
+}));
+
+const users = {};
+
+app.get("/users", (_, res) => res.send(JSON.stringify(users)));
+
+app.post('/cid', (req, res, next) => {
+    multer({
+        storage: multer.diskStorage({
+            destination(req, _, done) {
+                try {
+                    fs.readdirSync(`${req.body.id}/`);
+                } catch (error) {
+                    fs.mkdirSync(`${req.body.id}/`);
+                }
+
+                done(null, `${req.body.id}/`)
+            },
+            filename(req, file, done) {
+                const ext = path.extname(file.originalname);
+                done(null, `${req.body.id}/`);
+            }
+        })
+    }).single('image')(req, res, next);
+}, (req, res) => {
+    const { id, name, birth, gender } = req.body;
+    users[id] = { name, birth, gender, 'img': req.file?.path ?? ''};
+    res.send('ok');
+});
+
+app.get('/rid', (req,res) => {
+    const id = req?.query?.id;
+    res.send(id in users ? JSON.stringify(users[id]) : `존재하지 않는 ID: ${id}`);
+});
+
+app.put('/uid', (req, res) => {
+    const { id, name, birth, gender } = req.body;
+    if (id in users) {
+        if (name) users[id]['name'] = name;
+        if (birth) users[id]['birth'] = birth;
+        if (gender) users[id]['gender'] = gender;
+    }
+    res.send('OK');
+});
+
+app.delete('/did', (req, res) => {
+    const id = req?.query?.id;
+    if (id) delete users[id];
+    res.send('OK');
+});
+
+app.listen(app.get('port'), () => console.log(`${app.get('port')} 번 포트에서 대기 중`));
